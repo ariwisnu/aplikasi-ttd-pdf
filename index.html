@@ -14,20 +14,27 @@
         .file-input-label:hover { background-color: #4338ca; }
         .file-input { display: none; }
         #pdf-viewer-container { position: relative; border: 2px dashed #d1d5db; border-radius: 0.5rem; overflow: auto; background-color: #f9fafb; }
-        #pdf-canvas { display: block; margin: 0 auto; max-width: 100%; height: auto; }
-        #signature-wrapper { position: absolute; display: none; border: 2px dashed rgba(79, 70, 229, 0.5); cursor: move; user-select: none; }
-        #signature-img { width: 100%; height: 100%; display: block; pointer-events: none; }
-        #resize-handle { position: absolute; bottom: -5px; right: -5px; width: 12px; height: 12px; background-color: #4f46e5; border: 2px solid white; border-radius: 50%; cursor: se-resize; }
+        #canvas-wrapper { position: relative; margin: auto; }
+        #pdf-canvas { display: block; max-width: 100%; height: auto; }
+        .signature-wrapper { position: absolute; display: block; border: 2px dashed rgba(79, 70, 229, 0.5); cursor: move; user-select: none; }
+        .signature-img { width: 100%; height: 100%; display: block; pointer-events: none; }
+        .resize-handle { position: absolute; bottom: -5px; right: -5px; width: 12px; height: 12px; background-color: #4f46e5; border: 2px solid white; border-radius: 50%; cursor: se-resize; }
+        .delete-handle { position: absolute; top: -8px; right: -8px; width: 18px; height: 18px; background-color: #ef4444; color: white; border: 2px solid white; border-radius: 50%; cursor: pointer; display: flex; align-items: center; justify-content: center; font-size: 12px; font-weight: bold; }
         #notification { position: fixed; bottom: 20px; left: 50%; transform: translateX(-50%); background-color: #22c55e; color: white; padding: 10px 20px; border-radius: 0.5rem; z-index: 1000; opacity: 0; transition: opacity 0.5s; }
         .btn-nav { background-color: #6366f1; color: white; padding: 8px 16px; border-radius: 0.375rem; transition: background-color 0.2s; }
         .btn-nav:hover { background-color: #4f46e5; }
         .btn-nav:disabled { background-color: #a5b4fc; cursor: not-allowed; }
         .form-input { width: 100%; padding: 0.75rem; border: 1px solid #d1d5db; border-radius: 0.5rem; }
+        /* Modal Styles */
+        .modal-overlay { position: fixed; top: 0; left: 0; right: 0; bottom: 0; background-color: rgba(0,0,0,0.5); display: flex; align-items: center; justify-content: center; z-index: 2000; }
+        .modal-content { background-color: white; padding: 2rem; border-radius: 0.5rem; max-width: 90%; width: 600px; max-height: 80vh; overflow-y: auto; }
+        .signature-item { border: 2px solid #e5e7eb; padding: 1rem; border-radius: 0.5rem; cursor: pointer; transition: border-color 0.2s; }
+        .signature-item.selected { border-color: #4f46e5; }
+        .signature-item img { max-height: 60px; margin: auto; }
     </style>
 </head>
 <body class="bg-slate-100 dark:bg-slate-900 text-slate-800 dark:text-slate-200">
 
-    <!-- Container untuk Otentikasi -->
     <div id="auth-container" class="container mx-auto max-w-md p-8 mt-20 bg-white rounded-xl shadow-lg">
         <h1 class="text-2xl font-bold text-center text-indigo-600 mb-6">Login Aplikasi TTD</h1>
         <div id="auth-error" class="text-red-500 text-center mb-4 hidden"></div>
@@ -38,7 +45,6 @@
         </form>
     </div>
 
-    <!-- Container untuk Aplikasi Utama (disembunyikan secara default) -->
     <div id="app-container" class="hidden">
         <div class="container mx-auto max-w-6xl p-4 sm:p-6 lg:p-8">
             <header class="flex justify-between items-center mb-8">
@@ -55,10 +61,12 @@
                         <label for="pdf-upload" class="file-input-label">Pilih File PDF</label>
                         <input type="file" id="pdf-upload" class="file-input" accept="application/pdf">
                     </div>
-                    <div class="text-center">
-                        <h2 class="text-lg font-semibold mb-2 text-indigo-600">Langkah 2: Tanda Tangan</h2>
-                        <label for="signature-upload" class="file-input-label">Unggah TTD Baru</label>
+                    <div class="text-center space-y-2">
+                        <h2 class="text-lg font-semibold text-indigo-600">Langkah 2: Tanda Tangan</h2>
+                        <button id="select-signature-btn" class="w-full bg-indigo-500 text-white py-2.5 rounded-lg hover:bg-indigo-600">Pilih TTD</button>
+                        <label for="signature-upload" class="file-input-label !bg-gray-500 hover:!bg-gray-600">Unggah TTD Baru</label>
                         <input type="file" id="signature-upload" class="file-input" accept="image/png, image/jpeg">
+                        <p id="active-signature-name" class="text-sm text-slate-500 truncate"></p>
                     </div>
                     <div class="text-center">
                         <h2 class="text-lg font-semibold mb-2 text-slate-500">Langkah 3: Simpan</h2>
@@ -73,21 +81,32 @@
                     </div>
                 </div>
                 <div id="pdf-viewer-container" class="min-h-[700px] flex items-center justify-center">
-                    <p id="placeholder-text" class="text-slate-400">Pratinjau PDF akan muncul di sini</p>
-                    <canvas id="pdf-canvas"></canvas>
-                    <div id="signature-wrapper">
-                        <img id="signature-img" alt="Tanda Tangan">
-                        <div id="resize-handle"></div>
+                    <div id="canvas-wrapper">
+                        <p id="placeholder-text" class="text-slate-400">Pratinjau PDF akan muncul di sini</p>
+                        <canvas id="pdf-canvas"></canvas>
                     </div>
                 </div>
             </div>
+        </div>
+    </div>
+    
+    <!-- Signature Selector Modal -->
+    <div id="signature-modal" class="modal-overlay hidden">
+        <div class="modal-content">
+            <div class="flex justify-between items-center mb-4">
+                <h2 class="text-xl font-bold">Pilih Tanda Tangan</h2>
+                <button id="close-modal-btn" class="text-2xl">&times;</button>
+            </div>
+            <div id="signature-gallery" class="grid grid-cols-1 md:grid-cols-2 gap-4">
+                <!-- Signature items will be injected here -->
+            </div>
+             <p id="no-signatures-msg" class="text-center text-slate-500 hidden">Anda belum memiliki tanda tangan. Unggah satu untuk memulai.</p>
         </div>
     </div>
 
     <div id="notification"></div>
 
     <script>
-        // --- DOM Elements ---
         const authContainer = document.getElementById('auth-container');
         const appContainer = document.getElementById('app-container');
         const loginForm = document.getElementById('login-form');
@@ -98,34 +117,33 @@
         const signatureUpload = document.getElementById('signature-upload');
         const downloadBtn = document.getElementById('download-btn');
         const pdfCanvas = document.getElementById('pdf-canvas');
-        const pdfViewerContainer = document.getElementById('pdf-viewer-container');
-        const signatureWrapper = document.getElementById('signature-wrapper');
-        const signatureImg = document.getElementById('signature-img');
-        const resizeHandle = document.getElementById('resize-handle');
+        const canvasWrapper = document.getElementById('canvas-wrapper');
         const placeholderText = document.getElementById('placeholder-text');
         const notification = document.getElementById('notification');
         const prevPageBtn = document.getElementById('prev-page');
         const nextPageBtn = document.getElementById('next-page');
         const pageNumSpan = document.getElementById('page-num');
         const pageCountSpan = document.getElementById('page-count');
+        const selectSignatureBtn = document.getElementById('select-signature-btn');
+        const signatureModal = document.getElementById('signature-modal');
+        const closeModalBtn = document.getElementById('close-modal-btn');
+        const signatureGallery = document.getElementById('signature-gallery');
+        const activeSignatureName = document.getElementById('active-signature-name');
+        const noSignaturesMsg = document.getElementById('no-signatures-msg');
 
-        // --- State Variables ---
         let pdfDoc = null;
         let currentPageNum = 1;
-        let signatureImage = null; // Ini akan menampung data URL dari localStorage
-        let signaturePlacedOnPage = 0;
-        let signaturePos = { x: 0, y: 0 };
-        let isDragging = false;
-        let isResizing = false;
+        let activeSignatureImage = null; // Holds the data URL of the selected signature
+        let allSignatures = []; // Holds all signature objects from localStorage
+        let placedSignatures = []; // Holds signatures placed on the PDF
+        let activeDragTarget = null;
+        let activeResizeTarget = null;
         let dragOffset = { x: 0, y: 0 };
         let initialSize = { width: 0, height: 0, x: 0, y: 0 };
         
-        // --- AUTHENTICATION & SESSION LOGIC ---
-        
-        // Cek jika user sudah login saat halaman dimuat
         window.addEventListener('load', () => {
-            if (sessionStorage.getItem('loggedInUser') === 'admin') {
-                showApp('admin');
+            if (sessionStorage.getItem('loggedInUser') === 'WATCMOF') {
+                showApp('WATCMOF');
             }
         });
 
@@ -133,9 +151,7 @@
             e.preventDefault();
             const user = document.getElementById('login-user').value;
             const pass = document.getElementById('login-password').value;
-
-            // Kredensial yang di-hardcode
-            if (user === 'admin' && pass === 'admin123') {
+            if (user === 'WATCMOF' && pass === 'watc122.3') {
                 sessionStorage.setItem('loggedInUser', user);
                 showApp(user);
             } else {
@@ -155,35 +171,43 @@
             authContainer.classList.add('hidden');
             appContainer.classList.remove('hidden');
             userDisplay.textContent = `Login sebagai: ${username}`;
-            loadUserSignature(username);
+            loadUserSignatures(username);
         }
 
         function resetAppState() {
             pdfDoc = null;
-            signatureImage = null;
-            signatureImg.src = '';
+            placedSignatures = [];
+            activeSignatureImage = null;
+            allSignatures = [];
             placeholderText.style.display = 'block';
-            resetSignatureState();
+            pdfCanvas.style.display = 'none';
+            renderSignaturesForCurrentPage();
         }
 
-        // --- SIGNATURE STORAGE (localStorage) LOGIC ---
-        function getSignatureStorageKey(username) {
-            return `savedSignature_${username}`;
-        }
+        function getSignatureStorageKey(username) { return `savedSignatures_${username}`; }
 
-        function loadUserSignature(username) {
+        function loadUserSignatures(username) {
             const storageKey = getSignatureStorageKey(username);
-            const savedSig = localStorage.getItem(storageKey);
-            if (savedSig) {
-                signatureImage = savedSig;
-                signatureImg.src = savedSig;
-                showNotification('Tanda tangan berhasil dimuat.');
+            const savedSigsJSON = localStorage.getItem(storageKey);
+            allSignatures = savedSigsJSON ? JSON.parse(savedSigsJSON) : [];
+            
+            if (allSignatures.length > 0) {
+                setActiveSignature(allSignatures[0]);
             } else {
-                showNotification('Anda belum punya tanda tangan. Silakan unggah.');
+                activeSignatureName.textContent = 'Tidak ada TTD aktif';
+                activeSignatureImage = null;
             }
+            populateSignatureSelector();
         }
 
-        function processAndSaveSignature(imageDataUrl, username) {
+        function setActiveSignature(sig) {
+            activeSignatureImage = sig.data;
+            activeSignatureName.textContent = `Aktif: ${sig.name}`;
+            populateSignatureSelector(); // Repopulate to update the 'selected' style
+            showNotification(`Tanda tangan "${sig.name}" dipilih.`);
+        }
+
+        function processAndSaveSignature(imageDataUrl, sigName, username) {
             const img = new Image();
             img.onload = () => {
                 const canvas = document.createElement('canvas');
@@ -199,13 +223,13 @@
                 ctx.putImageData(imageData, 0, 0);
                 const transparentImageDataUrl = canvas.toDataURL('image/png');
                 
-                // Simpan ke localStorage
-                const storageKey = getSignatureStorageKey(username);
-                localStorage.setItem(storageKey, transparentImageDataUrl);
-
-                signatureImage = transparentImageDataUrl;
-                signatureImg.src = transparentImageDataUrl;
-                showNotification('Tanda tangan berhasil disimpan di browser ini!');
+                const newSig = { id: Date.now(), name: sigName, data: transparentImageDataUrl };
+                allSignatures.push(newSig);
+                localStorage.setItem(getSignatureStorageKey(username), JSON.stringify(allSignatures));
+                
+                if(!activeSignatureImage) setActiveSignature(newSig);
+                populateSignatureSelector();
+                showNotification('Tanda tangan baru berhasil disimpan!');
             };
             img.src = imageDataUrl;
         }
@@ -215,13 +239,79 @@
             if (!loggedInUser) return;
             const file = e.target.files[0];
             if (file && file.type.startsWith('image/')) {
+                // FIX: Remove prompt and use filename as the default name.
+                const sigName = file.name.split('.').slice(0, -1).join('.') || "Tanda Tangan Baru";
                 const fileReader = new FileReader();
-                fileReader.onload = (event) => processAndSaveSignature(event.target.result, loggedInUser);
+                fileReader.onload = (event) => processAndSaveSignature(event.target.result, sigName, loggedInUser);
                 fileReader.readAsDataURL(file);
             }
         });
         
-        // --- CORE PDF & SIGNATURE PLACEMENT LOGIC (Unchanged) ---
+        // Modal Logic
+        selectSignatureBtn.addEventListener('click', () => signatureModal.classList.remove('hidden'));
+        closeModalBtn.addEventListener('click', () => signatureModal.classList.add('hidden'));
+        
+        function populateSignatureSelector() {
+            signatureGallery.innerHTML = '';
+            if (allSignatures.length === 0) {
+                noSignaturesMsg.classList.remove('hidden');
+                return;
+            }
+            noSignaturesMsg.classList.add('hidden');
+
+            allSignatures.forEach(sig => {
+                const item = document.createElement('div');
+                item.className = 'signature-item relative';
+                if (activeSignatureImage === sig.data) {
+                    item.classList.add('selected');
+                }
+                
+                item.innerHTML = `
+                    <img src="${sig.data}" alt="${sig.name}">
+                    <p class="text-center font-semibold mt-2">${sig.name}</p>
+                    <button data-id="${sig.id}" class="delete-sig-btn absolute top-2 right-2 bg-red-500 text-white rounded-full w-6 h-6 flex items-center justify-center">&times;</button>
+                `;
+                
+                item.addEventListener('click', (e) => {
+                    if (!e.target.classList.contains('delete-sig-btn')) {
+                        setActiveSignature(sig);
+                        signatureModal.classList.add('hidden');
+                    }
+                });
+                
+                signatureGallery.appendChild(item);
+            });
+            
+            document.querySelectorAll('.delete-sig-btn').forEach(btn => {
+                btn.addEventListener('click', (e) => {
+                    e.stopPropagation();
+                    const sigId = parseInt(e.target.dataset.id, 10);
+                    deleteSignature(sigId);
+                });
+            });
+        }
+
+        function deleteSignature(sigId) {
+            const sigToDelete = allSignatures.find(s => s.id === sigId);
+            if (!sigToDelete) return;
+
+            // FIX: Use a more reliable confirmation method if confirm() is an issue. For now, it's kept.
+            if (window.confirm(`Apakah Anda yakin ingin menghapus tanda tangan "${sigToDelete.name}"?`)) {
+                allSignatures = allSignatures.filter(s => s.id !== sigId);
+                localStorage.setItem(getSignatureStorageKey(sessionStorage.getItem('loggedInUser')), JSON.stringify(allSignatures));
+                
+                if (activeSignatureImage === sigToDelete.data) {
+                    if (allSignatures.length > 0) {
+                        setActiveSignature(allSignatures[0]);
+                    } else {
+                        activeSignatureImage = null;
+                        activeSignatureName.textContent = 'Tidak ada TTD aktif';
+                    }
+                }
+                populateSignatureSelector();
+            }
+        }
+        
         pdfjsLib.GlobalWorkerOptions.workerSrc = `https://cdnjs.cloudflare.com/ajax/libs/pdf.js/2.16.105/pdf.worker.min.js`;
         
         pdfUpload.addEventListener('change', (e) => {
@@ -233,10 +323,11 @@
                     pdfjsLib.getDocument(typedarray).promise.then(pdf => {
                         pdfDoc = pdf;
                         currentPageNum = 1;
+                        placedSignatures = [];
                         renderPage(currentPageNum);
                         placeholderText.style.display = 'none';
+                        pdfCanvas.style.display = 'block';
                         pageCountSpan.textContent = pdfDoc.numPages;
-                        resetSignatureState();
                         updateNavButtons();
                     });
                 };
@@ -251,105 +342,109 @@
                 const context = pdfCanvas.getContext('2d');
                 pdfCanvas.height = viewport.height;
                 pdfCanvas.width = viewport.width;
-                page.render({ canvasContext: context, viewport: viewport });
-                pageNumSpan.textContent = num;
-                signatureWrapper.style.display = (signaturePlacedOnPage === num) ? 'block' : 'none';
+                page.render({ canvasContext: context, viewport: viewport }).promise.then(() => {
+                    pageNumSpan.textContent = num;
+                    renderSignaturesForCurrentPage();
+                });
             });
         }
 
-        prevPageBtn.addEventListener('click', () => {
-            if (currentPageNum <= 1) return;
-            currentPageNum--;
-            renderPage(currentPageNum);
-            updateNavButtons();
-        });
-
-        nextPageBtn.addEventListener('click', () => {
-            if (currentPageNum >= pdfDoc.numPages) return;
-            currentPageNum++;
-            renderPage(currentPageNum);
-            updateNavButtons();
-        });
-
-        function updateNavButtons() {
-            prevPageBtn.disabled = !pdfDoc || currentPageNum <= 1;
-            nextPageBtn.disabled = !pdfDoc || currentPageNum >= pdfDoc.numPages;
+        function renderSignaturesForCurrentPage() {
+            document.querySelectorAll('.signature-wrapper').forEach(el => el.remove());
+            placedSignatures.forEach((sig, index) => {
+                if (sig.pageNum === currentPageNum) {
+                    const wrapper = createSignatureElement(sig, index);
+                    canvasWrapper.appendChild(wrapper);
+                }
+            });
+            downloadBtn.disabled = placedSignatures.length === 0;
+        }
+        
+        function createSignatureElement(sig, index) {
+            const wrapper = document.createElement('div');
+            wrapper.className = 'signature-wrapper';
+            wrapper.style.left = `${sig.x}px`;
+            wrapper.style.top = `${sig.y}px`;
+            wrapper.style.width = `${sig.width}px`;
+            wrapper.style.height = `${sig.height}px`;
+            wrapper.dataset.signatureIndex = index;
+            const img = document.createElement('img');
+            img.src = sig.imgData; // Use the specific image data for this signature
+            img.className = 'signature-img';
+            const resizeHandle = document.createElement('div');
+            resizeHandle.className = 'resize-handle';
+            const deleteHandle = document.createElement('div');
+            deleteHandle.className = 'delete-handle';
+            deleteHandle.innerHTML = '&times;';
+            wrapper.appendChild(img);
+            wrapper.appendChild(resizeHandle);
+            wrapper.appendChild(deleteHandle);
+            wrapper.addEventListener('mousedown', onDragStart);
+            resizeHandle.addEventListener('mousedown', onResizeStart);
+            deleteHandle.addEventListener('click', onDeletePlaced);
+            return wrapper;
         }
 
-        pdfViewerContainer.addEventListener('click', (e) => {
-            if (!pdfDoc || !signatureImage || e.target === signatureWrapper || e.target === resizeHandle) return;
-            const rect = pdfCanvas.getBoundingClientRect();
-            const x = e.clientX - rect.left - (signatureWrapper.offsetWidth / 2);
-            const y = e.clientY - rect.top - (signatureWrapper.offsetHeight / 2);
-            signaturePos = { x, y };
-            signatureWrapper.style.left = `${x}px`;
-            signatureWrapper.style.top = `${y}px`;
-            signatureWrapper.style.display = 'block';
-            signaturePlacedOnPage = currentPageNum;
-            downloadBtn.disabled = false;
+        prevPageBtn.addEventListener('click', () => { if (currentPageNum <= 1) return; currentPageNum--; renderPage(currentPageNum); updateNavButtons(); });
+        nextPageBtn.addEventListener('click', () => { if (currentPageNum >= pdfDoc.numPages) return; currentPageNum++; renderPage(currentPageNum); updateNavButtons(); });
+        function updateNavButtons() { prevPageBtn.disabled = !pdfDoc || currentPageNum <= 1; nextPageBtn.disabled = !pdfDoc || currentPageNum >= pdfDoc.numPages; }
+
+        canvasWrapper.addEventListener('click', (e) => {
+            if (!pdfDoc || !activeSignatureImage || e.target.closest('.signature-wrapper')) return;
+            const rect = canvasWrapper.getBoundingClientRect();
+            const defaultWidth = 150;
+            const defaultHeight = 75;
+            const x = e.clientX - rect.left - (defaultWidth / 2);
+            const y = e.clientY - rect.top - (defaultHeight / 2);
+            const newSignature = {
+                pageNum: currentPageNum, x: x, y: y,
+                width: defaultWidth, height: defaultHeight,
+                imgData: activeSignatureImage // Store which signature was used
+            };
+            placedSignatures.push(newSignature);
+            renderSignaturesForCurrentPage();
         });
         
-        signatureWrapper.addEventListener('mousedown', (e) => {
-            if (e.target === resizeHandle) return;
-            isDragging = true;
-            dragOffset.x = e.clientX - signatureWrapper.getBoundingClientRect().left;
-            dragOffset.y = e.clientY - signatureWrapper.getBoundingClientRect().top;
-            signatureWrapper.style.cursor = 'grabbing';
-        });
-
-        resizeHandle.addEventListener('mousedown', (e) => {
-            e.stopPropagation();
-            isResizing = true;
-            const rect = signatureWrapper.getBoundingClientRect();
-            initialSize.width = rect.width;
-            initialSize.height = rect.height;
-            initialSize.x = e.clientX;
-            initialSize.y = e.clientY;
-        });
+        function onDragStart(e) { activeDragTarget = e.currentTarget; const index = activeDragTarget.dataset.signatureIndex; if (!placedSignatures[index]) return; dragOffset.x = e.clientX - activeDragTarget.getBoundingClientRect().left; dragOffset.y = e.clientY - activeDragTarget.getBoundingClientRect().top; activeDragTarget.style.cursor = 'grabbing'; }
+        function onResizeStart(e) { e.stopPropagation(); activeResizeTarget = e.currentTarget.parentElement; const index = activeResizeTarget.dataset.signatureIndex; if (!placedSignatures[index]) return; const rect = activeResizeTarget.getBoundingClientRect(); initialSize.width = rect.width; initialSize.height = rect.height; initialSize.x = e.clientX; initialSize.y = e.clientY; }
+        function onDeletePlaced(e) { e.stopPropagation(); const wrapper = e.currentTarget.parentElement; const index = parseInt(wrapper.dataset.signatureIndex, 10); placedSignatures.splice(index, 1); renderSignaturesForCurrentPage(); }
 
         document.addEventListener('mousemove', (e) => {
             e.preventDefault();
-            if (isDragging) {
-                const containerRect = pdfViewerContainer.getBoundingClientRect();
-                let newX = e.clientX - containerRect.left - dragOffset.x;
-                let newY = e.clientY - containerRect.top - dragOffset.y;
-                newX = Math.max(0, Math.min(newX, containerRect.width - signatureWrapper.offsetWidth));
-                newY = Math.max(0, Math.min(newY, containerRect.height - signatureWrapper.offsetHeight));
-                signaturePos = { x: newX, y: newY };
-                signatureWrapper.style.left = `${newX}px`;
-                signatureWrapper.style.top = `${newY}px`;
+            if (activeDragTarget) {
+                const index = activeDragTarget.dataset.signatureIndex; const sig = placedSignatures[index]; if (!sig) return;
+                const wrapperRect = canvasWrapper.getBoundingClientRect();
+                let newX = e.clientX - wrapperRect.left - dragOffset.x; let newY = e.clientY - wrapperRect.top - dragOffset.y;
+                newX = Math.max(0, Math.min(newX, wrapperRect.width - sig.width)); newY = Math.max(0, Math.min(newY, wrapperRect.height - sig.height));
+                sig.x = newX; sig.y = newY;
+                activeDragTarget.style.left = `${newX}px`; activeDragTarget.style.top = `${newY}px`;
             }
-            if (isResizing) {
-                const dx = e.clientX - initialSize.x;
-                const newWidth = initialSize.width + dx;
-                if (newWidth > 50) {
-                    signatureWrapper.style.width = `${newWidth}px`;
-                }
+            if (activeResizeTarget) {
+                const index = activeResizeTarget.dataset.signatureIndex; const sig = placedSignatures[index]; if (!sig) return;
+                const dx = e.clientX - initialSize.x; const newWidth = initialSize.width + dx;
+                if (newWidth > 50) { sig.width = newWidth; sig.height = newWidth / 2; activeResizeTarget.style.width = `${sig.width}px`; activeResizeTarget.style.height = `${sig.height}px`; }
             }
         });
 
-        document.addEventListener('mouseup', () => {
-            isDragging = false;
-            isResizing = false;
-            signatureWrapper.style.cursor = 'move';
-        });
-
-        function resetSignatureState() {
-            signaturePlacedOnPage = 0;
-            signatureWrapper.style.display = 'none';
-            downloadBtn.disabled = true;
-        }
+        document.addEventListener('mouseup', () => { if(activeDragTarget) activeDragTarget.style.cursor = 'move'; activeDragTarget = null; activeResizeTarget = null; });
         
         downloadBtn.addEventListener('click', async () => {
-            if (!pdfDoc || !signaturePlacedOnPage) return;
+            if (!pdfDoc || placedSignatures.length === 0) return;
             showNotification('Mempersiapkan PDF...');
             downloadBtn.disabled = true;
             downloadBtn.textContent = 'Memproses...';
             const { jsPDF } = window.jspdf;
             let finalPdf = null;
-            const sigImgElement = new Image();
-            sigImgElement.src = signatureImage;
-            await sigImgElement.decode();
+            
+            // Preload all unique signature images
+            const uniqueSigImages = [...new Set(placedSignatures.map(s => s.imgData))];
+            const imageElements = {};
+            for(const sigData of uniqueSigImages) {
+                const img = new Image();
+                img.src = sigData;
+                await img.decode();
+                imageElements[sigData] = img;
+            }
             
             for (let i = 1; i <= pdfDoc.numPages; i++) {
                 const page = await pdfDoc.getPage(i);
@@ -359,16 +454,20 @@
                 tempCanvas.width = viewport.width;
                 tempCanvas.height = viewport.height;
                 await page.render({ canvasContext: tempCtx, viewport: viewport }).promise;
-                if (i === signaturePlacedOnPage) {
+                
+                const signaturesOnPage = placedSignatures.filter(s => s.pageNum === i);
+                if (signaturesOnPage.length > 0) {
                     const canvasRect = pdfCanvas.getBoundingClientRect();
                     const scaleX = tempCanvas.width / canvasRect.width;
-                    const scaleY = tempCanvas.height / canvasRect.height; // FIX: Defined scaleY
-                    const finalX = signaturePos.x * scaleX;
-                    const finalY = signaturePos.y * scaleY;
-                    const finalWidth = signatureWrapper.offsetWidth * scaleX;
-                    const finalHeight = signatureWrapper.offsetHeight * scaleY;
-                    tempCtx.drawImage(sigImgElement, finalX, finalY, finalWidth, finalHeight);
+                    const scaleY = tempCanvas.height / canvasRect.height;
+                    for (const sig of signaturesOnPage) {
+                        const sigImgElement = imageElements[sig.imgData];
+                        const finalX = sig.x * scaleX; const finalY = sig.y * scaleY;
+                        const finalWidth = sig.width * scaleX; const finalHeight = sig.height * scaleY;
+                        tempCtx.drawImage(sigImgElement, finalX, finalY, finalWidth, finalHeight);
+                    }
                 }
+
                 const imageData = tempCanvas.toDataURL('image/jpeg', 0.95);
                 if (i === 1) {
                     finalPdf = new jsPDF({ orientation: tempCanvas.width > tempCanvas.height ? 'l' : 'p', unit: 'px', format: [tempCanvas.width, tempCanvas.height] });
