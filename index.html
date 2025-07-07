@@ -362,6 +362,7 @@
                 if (i === signaturePlacedOnPage) {
                     const canvasRect = pdfCanvas.getBoundingClientRect();
                     const scaleX = tempCanvas.width / canvasRect.width;
+                    const scaleY = tempCanvas.height / canvasRect.height; // FIX: Defined scaleY
                     const finalX = signaturePos.x * scaleX;
                     const finalY = signaturePos.y * scaleY;
                     const finalWidth = signatureWrapper.offsetWidth * scaleX;
