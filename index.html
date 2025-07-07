@@ -1,0 +1,394 @@
+<!DOCTYPE html>
+<html lang="id">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Aplikasi Tanda Tangan PDF dengan Login Lokal</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/2.16.105/pdf.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+    <style>
+        body { font-family: 'Inter', sans-serif; }
+        .file-input-label { display: block; padding: 0.75rem 1.25rem; border-radius: 0.5rem; cursor: pointer; background-color: #4f46e5; color: white; transition: background-color 0.2s; text-align: center; font-weight: 500; }
+        .file-input-label:hover { background-color: #4338ca; }
+        .file-input { display: none; }
+        #pdf-viewer-container { position: relative; border: 2px dashed #d1d5db; border-radius: 0.5rem; overflow: auto; background-color: #f9fafb; }
+        #pdf-canvas { display: block; margin: 0 auto; max-width: 100%; height: auto; }
+        #signature-wrapper { position: absolute; display: none; border: 2px dashed rgba(79, 70, 229, 0.5); cursor: move; user-select: none; }
+        #signature-img { width: 100%; height: 100%; display: block; pointer-events: none; }
+        #resize-handle { position: absolute; bottom: -5px; right: -5px; width: 12px; height: 12px; background-color: #4f46e5; border: 2px solid white; border-radius: 50%; cursor: se-resize; }
+        #notification { position: fixed; bottom: 20px; left: 50%; transform: translateX(-50%); background-color: #22c55e; color: white; padding: 10px 20px; border-radius: 0.5rem; z-index: 1000; opacity: 0; transition: opacity 0.5s; }
+        .btn-nav { background-color: #6366f1; color: white; padding: 8px 16px; border-radius: 0.375rem; transition: background-color 0.2s; }
+        .btn-nav:hover { background-color: #4f46e5; }
+        .btn-nav:disabled { background-color: #a5b4fc; cursor: not-allowed; }
+        .form-input { width: 100%; padding: 0.75rem; border: 1px solid #d1d5db; border-radius: 0.5rem; }
+    </style>
+</head>
+<body class="bg-slate-100 dark:bg-slate-900 text-slate-800 dark:text-slate-200">
+
+    <!-- Container untuk Otentikasi -->
+    <div id="auth-container" class="container mx-auto max-w-md p-8 mt-20 bg-white rounded-xl shadow-lg">
+        <h1 class="text-2xl font-bold text-center text-indigo-600 mb-6">Login Aplikasi TTD</h1>
+        <div id="auth-error" class="text-red-500 text-center mb-4 hidden"></div>
+        <form id="login-form" class="space-y-4">
+            <input type="text" id="login-user" placeholder="Username" class="form-input" required>
+            <input type="password" id="login-password" placeholder="Password" class="form-input" required>
+            <button type="submit" class="w-full bg-indigo-600 text-white py-2 rounded-lg hover:bg-indigo-700">Login</button>
+        </form>
+    </div>
+
+    <!-- Container untuk Aplikasi Utama (disembunyikan secara default) -->
+    <div id="app-container" class="hidden">
+        <div class="container mx-auto max-w-6xl p-4 sm:p-6 lg:p-8">
+            <header class="flex justify-between items-center mb-8">
+                <div>
+                    <h1 class="text-3xl sm:text-4xl font-bold text-indigo-600">Alat Tanda Tangan PDF</h1>
+                    <p id="user-display" class="text-slate-500"></p>
+                </div>
+                <button id="logout-btn" class="bg-red-500 text-white font-medium py-2 px-4 rounded-lg hover:bg-red-600">Logout</button>
+            </header>
+            <div class="bg-white p-6 rounded-xl shadow-lg">
+                <div class="grid md:grid-cols-3 gap-6 mb-6">
+                    <div class="text-center">
+                        <h2 class="text-lg font-semibold mb-2 text-indigo-600">Langkah 1: Unggah PDF</h2>
+                        <label for="pdf-upload" class="file-input-label">Pilih File PDF</label>
+                        <input type="file" id="pdf-upload" class="file-input" accept="application/pdf">
+                    </div>
+                    <div class="text-center">
+                        <h2 class="text-lg font-semibold mb-2 text-indigo-600">Langkah 2: Tanda Tangan</h2>
+                        <label for="signature-upload" class="file-input-label">Unggah TTD Baru</label>
+                        <input type="file" id="signature-upload" class="file-input" accept="image/png, image/jpeg">
+                    </div>
+                    <div class="text-center">
+                        <h2 class="text-lg font-semibold mb-2 text-slate-500">Langkah 3: Simpan</h2>
+                        <button id="download-btn" class="w-full bg-green-600 text-white font-medium py-3 px-4 rounded-lg hover:bg-green-700 disabled:bg-slate-400" disabled>Simpan & Unduh PDF</button>
+                    </div>
+                </div>
+                <div class="flex justify-center items-center bg-slate-50 p-3 rounded-lg mb-4">
+                    <div id="pdf-nav" class="flex items-center gap-4">
+                        <button id="prev-page" class="btn-nav">Sebelumnya</button>
+                        <span>Halaman <span id="page-num">0</span> / <span id="page-count">0</span></span>
+                        <button id="next-page" class="btn-nav">Berikutnya</button>
+                    </div>
+                </div>
+                <div id="pdf-viewer-container" class="min-h-[700px] flex items-center justify-center">
+                    <p id="placeholder-text" class="text-slate-400">Pratinjau PDF akan muncul di sini</p>
+                    <canvas id="pdf-canvas"></canvas>
+                    <div id="signature-wrapper">
+                        <img id="signature-img" alt="Tanda Tangan">
+                        <div id="resize-handle"></div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <div id="notification"></div>
+
+    <script>
+        // --- DOM Elements ---
+        const authContainer = document.getElementById('auth-container');
+        const appContainer = document.getElementById('app-container');
+        const loginForm = document.getElementById('login-form');
+        const logoutBtn = document.getElementById('logout-btn');
+        const userDisplay = document.getElementById('user-display');
+        const authError = document.getElementById('auth-error');
+        const pdfUpload = document.getElementById('pdf-upload');
+        const signatureUpload = document.getElementById('signature-upload');
+        const downloadBtn = document.getElementById('download-btn');
+        const pdfCanvas = document.getElementById('pdf-canvas');
+        const pdfViewerContainer = document.getElementById('pdf-viewer-container');
+        const signatureWrapper = document.getElementById('signature-wrapper');
+        const signatureImg = document.getElementById('signature-img');
+        const resizeHandle = document.getElementById('resize-handle');
+        const placeholderText = document.getElementById('placeholder-text');
+        const notification = document.getElementById('notification');
+        const prevPageBtn = document.getElementById('prev-page');
+        const nextPageBtn = document.getElementById('next-page');
+        const pageNumSpan = document.getElementById('page-num');
+        const pageCountSpan = document.getElementById('page-count');
+
+        // --- State Variables ---
+        let pdfDoc = null;
+        let currentPageNum = 1;
+        let signatureImage = null; // Ini akan menampung data URL dari localStorage
+        let signaturePlacedOnPage = 0;
+        let signaturePos = { x: 0, y: 0 };
+        let isDragging = false;
+        let isResizing = false;
+        let dragOffset = { x: 0, y: 0 };
+        let initialSize = { width: 0, height: 0, x: 0, y: 0 };
+        
+        // --- AUTHENTICATION & SESSION LOGIC ---
+        
+        // Cek jika user sudah login saat halaman dimuat
+        window.addEventListener('load', () => {
+            if (sessionStorage.getItem('loggedInUser') === 'admin') {
+                showApp('admin');
+            }
+        });
+
+        loginForm.addEventListener('submit', (e) => {
+            e.preventDefault();
+            const user = document.getElementById('login-user').value;
+            const pass = document.getElementById('login-password').value;
+
+            // Kredensial yang di-hardcode
+            if (user === 'admin' && pass === 'admin123') {
+                sessionStorage.setItem('loggedInUser', user);
+                showApp(user);
+            } else {
+                authError.textContent = 'Username atau Password salah.';
+                authError.classList.remove('hidden');
+            }
+        });
+
+        logoutBtn.addEventListener('click', () => {
+            sessionStorage.removeItem('loggedInUser');
+            authContainer.classList.remove('hidden');
+            appContainer.classList.add('hidden');
+            resetAppState();
+        });
+        
+        function showApp(username) {
+            authContainer.classList.add('hidden');
+            appContainer.classList.remove('hidden');
+            userDisplay.textContent = `Login sebagai: ${username}`;
+            loadUserSignature(username);
+        }
+
+        function resetAppState() {
+            pdfDoc = null;
+            signatureImage = null;
+            signatureImg.src = '';
+            placeholderText.style.display = 'block';
+            resetSignatureState();
+        }
+
+        // --- SIGNATURE STORAGE (localStorage) LOGIC ---
+        function getSignatureStorageKey(username) {
+            return `savedSignature_${username}`;
+        }
+
+        function loadUserSignature(username) {
+            const storageKey = getSignatureStorageKey(username);
+            const savedSig = localStorage.getItem(storageKey);
+            if (savedSig) {
+                signatureImage = savedSig;
+                signatureImg.src = savedSig;
+                showNotification('Tanda tangan berhasil dimuat.');
+            } else {
+                showNotification('Anda belum punya tanda tangan. Silakan unggah.');
+            }
+        }
+
+        function processAndSaveSignature(imageDataUrl, username) {
+            const img = new Image();
+            img.onload = () => {
+                const canvas = document.createElement('canvas');
+                const ctx = canvas.getContext('2d');
+                canvas.width = img.width;
+                canvas.height = img.height;
+                ctx.drawImage(img, 0, 0);
+                const imageData = ctx.getImageData(0, 0, canvas.width, canvas.height);
+                const data = imageData.data;
+                for (let i = 0; i < data.length; i += 4) {
+                    if (data[i] > 240 && data[i + 1] > 240 && data[i + 2] > 240) data[i + 3] = 0;
+                }
+                ctx.putImageData(imageData, 0, 0);
+                const transparentImageDataUrl = canvas.toDataURL('image/png');
+                
+                // Simpan ke localStorage
+                const storageKey = getSignatureStorageKey(username);
+                localStorage.setItem(storageKey, transparentImageDataUrl);
+
+                signatureImage = transparentImageDataUrl;
+                signatureImg.src = transparentImageDataUrl;
+                showNotification('Tanda tangan berhasil disimpan di browser ini!');
+            };
+            img.src = imageDataUrl;
+        }
+
+        signatureUpload.addEventListener('change', (e) => {
+            const loggedInUser = sessionStorage.getItem('loggedInUser');
+            if (!loggedInUser) return;
+            const file = e.target.files[0];
+            if (file && file.type.startsWith('image/')) {
+                const fileReader = new FileReader();
+                fileReader.onload = (event) => processAndSaveSignature(event.target.result, loggedInUser);
+                fileReader.readAsDataURL(file);
+            }
+        });
+        
+        // --- CORE PDF & SIGNATURE PLACEMENT LOGIC (Unchanged) ---
+        pdfjsLib.GlobalWorkerOptions.workerSrc = `https://cdnjs.cloudflare.com/ajax/libs/pdf.js/2.16.105/pdf.worker.min.js`;
+        
+        pdfUpload.addEventListener('change', (e) => {
+            const file = e.target.files[0];
+            if (file && file.type === 'application/pdf') {
+                const fileReader = new FileReader();
+                fileReader.onload = function() {
+                    const typedarray = new Uint8Array(this.result);
+                    pdfjsLib.getDocument(typedarray).promise.then(pdf => {
+                        pdfDoc = pdf;
+                        currentPageNum = 1;
+                        renderPage(currentPageNum);
+                        placeholderText.style.display = 'none';
+                        pageCountSpan.textContent = pdfDoc.numPages;
+                        resetSignatureState();
+                        updateNavButtons();
+                    });
+                };
+                fileReader.readAsArrayBuffer(file);
+            }
+        });
+
+        function renderPage(num) {
+            if (!pdfDoc) return;
+            pdfDoc.getPage(num).then(page => {
+                const viewport = page.getViewport({ scale: 1.5 });
+                const context = pdfCanvas.getContext('2d');
+                pdfCanvas.height = viewport.height;
+                pdfCanvas.width = viewport.width;
+                page.render({ canvasContext: context, viewport: viewport });
+                pageNumSpan.textContent = num;
+                signatureWrapper.style.display = (signaturePlacedOnPage === num) ? 'block' : 'none';
+            });
+        }
+
+        prevPageBtn.addEventListener('click', () => {
+            if (currentPageNum <= 1) return;
+            currentPageNum--;
+            renderPage(currentPageNum);
+            updateNavButtons();
+        });
+
+        nextPageBtn.addEventListener('click', () => {
+            if (currentPageNum >= pdfDoc.numPages) return;
+            currentPageNum++;
+            renderPage(currentPageNum);
+            updateNavButtons();
+        });
+
+        function updateNavButtons() {
+            prevPageBtn.disabled = !pdfDoc || currentPageNum <= 1;
+            nextPageBtn.disabled = !pdfDoc || currentPageNum >= pdfDoc.numPages;
+        }
+
+        pdfViewerContainer.addEventListener('click', (e) => {
+            if (!pdfDoc || !signatureImage || e.target === signatureWrapper || e.target === resizeHandle) return;
+            const rect = pdfCanvas.getBoundingClientRect();
+            const x = e.clientX - rect.left - (signatureWrapper.offsetWidth / 2);
+            const y = e.clientY - rect.top - (signatureWrapper.offsetHeight / 2);
+            signaturePos = { x, y };
+            signatureWrapper.style.left = `${x}px`;
+            signatureWrapper.style.top = `${y}px`;
+            signatureWrapper.style.display = 'block';
+            signaturePlacedOnPage = currentPageNum;
+            downloadBtn.disabled = false;
+        });
+        
+        signatureWrapper.addEventListener('mousedown', (e) => {
+            if (e.target === resizeHandle) return;
+            isDragging = true;
+            dragOffset.x = e.clientX - signatureWrapper.getBoundingClientRect().left;
+            dragOffset.y = e.clientY - signatureWrapper.getBoundingClientRect().top;
+            signatureWrapper.style.cursor = 'grabbing';
+        });
+
+        resizeHandle.addEventListener('mousedown', (e) => {
+            e.stopPropagation();
+            isResizing = true;
+            const rect = signatureWrapper.getBoundingClientRect();
+            initialSize.width = rect.width;
+            initialSize.height = rect.height;
+            initialSize.x = e.clientX;
+            initialSize.y = e.clientY;
+        });
+
+        document.addEventListener('mousemove', (e) => {
+            e.preventDefault();
+            if (isDragging) {
+                const containerRect = pdfViewerContainer.getBoundingClientRect();
+                let newX = e.clientX - containerRect.left - dragOffset.x;
+                let newY = e.clientY - containerRect.top - dragOffset.y;
+                newX = Math.max(0, Math.min(newX, containerRect.width - signatureWrapper.offsetWidth));
+                newY = Math.max(0, Math.min(newY, containerRect.height - signatureWrapper.offsetHeight));
+                signaturePos = { x: newX, y: newY };
+                signatureWrapper.style.left = `${newX}px`;
+                signatureWrapper.style.top = `${newY}px`;
+            }
+            if (isResizing) {
+                const dx = e.clientX - initialSize.x;
+                const newWidth = initialSize.width + dx;
+                if (newWidth > 50) {
+                    signatureWrapper.style.width = `${newWidth}px`;
+                }
+            }
+        });
+
+        document.addEventListener('mouseup', () => {
+            isDragging = false;
+            isResizing = false;
+            signatureWrapper.style.cursor = 'move';
+        });
+
+        function resetSignatureState() {
+            signaturePlacedOnPage = 0;
+            signatureWrapper.style.display = 'none';
+            downloadBtn.disabled = true;
+        }
+        
+        downloadBtn.addEventListener('click', async () => {
+            if (!pdfDoc || !signaturePlacedOnPage) return;
+            showNotification('Mempersiapkan PDF...');
+            downloadBtn.disabled = true;
+            downloadBtn.textContent = 'Memproses...';
+            const { jsPDF } = window.jspdf;
+            let finalPdf = null;
+            const sigImgElement = new Image();
+            sigImgElement.src = signatureImage;
+            await sigImgElement.decode();
+            
+            for (let i = 1; i <= pdfDoc.numPages; i++) {
+                const page = await pdfDoc.getPage(i);
+                const viewport = page.getViewport({ scale: 1.5 });
+                const tempCanvas = document.createElement('canvas');
+                const tempCtx = tempCanvas.getContext('2d');
+                tempCanvas.width = viewport.width;
+                tempCanvas.height = viewport.height;
+                await page.render({ canvasContext: tempCtx, viewport: viewport }).promise;
+                if (i === signaturePlacedOnPage) {
+                    const canvasRect = pdfCanvas.getBoundingClientRect();
+                    const scaleX = tempCanvas.width / canvasRect.width;
+                    const finalX = signaturePos.x * scaleX;
+                    const finalY = signaturePos.y * scaleY;
+                    const finalWidth = signatureWrapper.offsetWidth * scaleX;
+                    const finalHeight = signatureWrapper.offsetHeight * scaleY;
+                    tempCtx.drawImage(sigImgElement, finalX, finalY, finalWidth, finalHeight);
+                }
+                const imageData = tempCanvas.toDataURL('image/jpeg', 0.95);
+                if (i === 1) {
+                    finalPdf = new jsPDF({ orientation: tempCanvas.width > tempCanvas.height ? 'l' : 'p', unit: 'px', format: [tempCanvas.width, tempCanvas.height] });
+                    finalPdf.addImage(imageData, 'JPEG', 0, 0, tempCanvas.width, tempCanvas.height);
+                } else {
+                    finalPdf.addPage([tempCanvas.width, tempCanvas.height], tempCanvas.width > tempCanvas.height ? 'l' : 'p');
+                    finalPdf.addImage(imageData, 'JPEG', 0, 0, tempCanvas.width, tempCanvas.height);
+                }
+            }
+            const originalFileName = pdfUpload.files[0].name.replace('.pdf', '');
+            finalPdf.save(`${originalFileName}-ditandatangani.pdf`);
+            downloadBtn.disabled = false;
+            downloadBtn.textContent = 'Simpan & Unduh PDF';
+        });
+
+        function showNotification(message, isError = false) {
+            notification.textContent = message;
+            notification.style.backgroundColor = isError ? '#ef4444' : '#22c55e';
+            notification.style.opacity = 1;
+            setTimeout(() => { notification.style.opacity = 0; }, 3500);
+        }
+    </script>
+</body>
+</html>
