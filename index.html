@@ -4,28 +4,45 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Aplikasi Tanda Tangan PDF dengan Login Lokal</title>
+    <!-- Library Eksternal -->
     <script src="https://cdn.tailwindcss.com"></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/2.16.105/pdf.min.js"></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+    <!-- CSS Kustom -->
     <style>
         body { font-family: 'Inter', sans-serif; }
         .file-input-label { display: block; padding: 0.75rem 1.25rem; border-radius: 0.5rem; cursor: pointer; background-color: #4f46e5; color: white; transition: background-color 0.2s; text-align: center; font-weight: 500; }
         .file-input-label:hover { background-color: #4338ca; }
         .file-input { display: none; }
-        #pdf-viewer-container { position: relative; border: 2px dashed #d1d5db; border-radius: 0.5rem; overflow: auto; background-color: #f9fafb; }
+        
+        /* Styling untuk area pratinjau PDF dan efek saat drag-and-drop */
+        #pdf-viewer-container { position: relative; border: 2px dashed #d1d5db; border-radius: 0.5rem; overflow: auto; background-color: #f9fafb; transition: all 0.2s ease-in-out; }
+        #pdf-viewer-container.dragover {
+            border-color: #4f46e5;
+            border-style: solid;
+            background-color: #e0e7ff;
+            transform: scale(1.02);
+        }
+        
         #canvas-wrapper { position: relative; margin: auto; }
         #pdf-canvas { display: block; max-width: 100%; height: auto; }
+        
+        /* Styling untuk elemen tanda tangan yang ditempatkan */
         .signature-wrapper { position: absolute; display: block; border: 2px dashed rgba(79, 70, 229, 0.5); cursor: move; user-select: none; }
         .signature-img { width: 100%; height: 100%; display: block; pointer-events: none; }
         .resize-handle { position: absolute; bottom: -5px; right: -5px; width: 12px; height: 12px; background-color: #4f46e5; border: 2px solid white; border-radius: 50%; cursor: se-resize; }
         .delete-handle { position: absolute; top: -8px; right: -8px; width: 18px; height: 18px; background-color: #ef4444; color: white; border: 2px solid white; border-radius: 50%; cursor: pointer; display: flex; align-items: center; justify-content: center; font-size: 12px; font-weight: bold; }
+        
+        /* Notifikasi pop-up */
         #notification { position: fixed; bottom: 20px; left: 50%; transform: translateX(-50%); background-color: #22c55e; color: white; padding: 10px 20px; border-radius: 0.5rem; z-index: 1000; opacity: 0; transition: opacity 0.5s; }
+        
         .btn-nav { background-color: #6366f1; color: white; padding: 8px 16px; border-radius: 0.375rem; transition: background-color 0.2s; }
         .btn-nav:hover { background-color: #4f46e5; }
         .btn-nav:disabled { background-color: #a5b4fc; cursor: not-allowed; }
         .form-input { width: 100%; padding: 0.75rem; border: 1px solid #d1d5db; border-radius: 0.5rem; }
-        /* Modal Styles */
+        
+        /* Styling untuk Modal Pemilih Tanda Tangan */
         .modal-overlay { position: fixed; top: 0; left: 0; right: 0; bottom: 0; background-color: rgba(0,0,0,0.5); display: flex; align-items: center; justify-content: center; z-index: 2000; }
         .modal-content { background-color: white; padding: 2rem; border-radius: 0.5rem; max-width: 90%; width: 600px; max-height: 80vh; overflow-y: auto; }
         .signature-item { border: 2px solid #e5e7eb; padding: 1rem; border-radius: 0.5rem; cursor: pointer; transition: border-color 0.2s; }
@@ -35,6 +52,7 @@
 </head>
 <body class="bg-slate-100 dark:bg-slate-900 text-slate-800 dark:text-slate-200">
 
+    <!-- === BAGIAN 1: FORM LOGIN === -->
     <div id="auth-container" class="container mx-auto max-w-md p-8 mt-20 bg-white rounded-xl shadow-lg">
         <h1 class="text-2xl font-bold text-center text-indigo-600 mb-6">Login Aplikasi TTD</h1>
         <div id="auth-error" class="text-red-500 text-center mb-4 hidden"></div>
@@ -45,6 +63,7 @@
         </form>
     </div>
 
+    <!-- === BAGIAN 2: APLIKASI UTAMA (disembunyikan secara default) === -->
     <div id="app-container" class="hidden">
         <div class="container mx-auto max-w-6xl p-4 sm:p-6 lg:p-8">
             <header class="flex justify-between items-center mb-8">
@@ -55,6 +74,7 @@
                 <button id="logout-btn" class="bg-red-500 text-white font-medium py-2 px-4 rounded-lg hover:bg-red-600">Logout</button>
             </header>
             <div class="bg-white p-6 rounded-xl shadow-lg">
+                <!-- Tombol-tombol kontrol utama -->
                 <div class="grid md:grid-cols-3 gap-6 mb-6">
                     <div class="text-center">
                         <h2 class="text-lg font-semibold mb-2 text-indigo-600">Langkah 1: Unggah PDF</h2>
@@ -73,6 +93,7 @@
                         <button id="download-btn" class="w-full bg-green-600 text-white font-medium py-3 px-4 rounded-lg hover:bg-green-700 disabled:bg-slate-400" disabled>Simpan & Unduh PDF</button>
                     </div>
                 </div>
+                <!-- Navigasi halaman PDF -->
                 <div class="flex justify-center items-center bg-slate-50 p-3 rounded-lg mb-4">
                     <div id="pdf-nav" class="flex items-center gap-4">
                         <button id="prev-page" class="btn-nav">Sebelumnya</button>
@@ -80,17 +101,19 @@
                         <button id="next-page" class="btn-nav">Berikutnya</button>
                     </div>
                 </div>
+                <!-- Area pratinjau PDF (juga sebagai drop zone) -->
                 <div id="pdf-viewer-container" class="min-h-[700px] flex items-center justify-center">
                     <div id="canvas-wrapper">
-                        <p id="placeholder-text" class="text-slate-400">Pratinjau PDF akan muncul di sini</p>
+                        <p id="placeholder-text" class="text-slate-400 text-center">Pratinjau PDF akan muncul di sini.<br>Anda juga bisa jatuhkan file PDF langsung ke area ini.</p>
                         <canvas id="pdf-canvas"></canvas>
+                        <!-- Tanda tangan yang ditempatkan akan muncul di dalam wrapper ini -->
                     </div>
                 </div>
             </div>
         </div>
     </div>
     
-    <!-- Signature Selector Modal -->
+    <!-- === BAGIAN 3: MODAL PEMILIH TANDA TANGAN === -->
     <div id="signature-modal" class="modal-overlay hidden">
         <div class="modal-content">
             <div class="flex justify-between items-center mb-4">
@@ -98,15 +121,18 @@
                 <button id="close-modal-btn" class="text-2xl">&times;</button>
             </div>
             <div id="signature-gallery" class="grid grid-cols-1 md:grid-cols-2 gap-4">
-                <!-- Signature items will be injected here -->
+                <!-- Item tanda tangan akan dimasukkan di sini oleh JavaScript -->
             </div>
              <p id="no-signatures-msg" class="text-center text-slate-500 hidden">Anda belum memiliki tanda tangan. Unggah satu untuk memulai.</p>
         </div>
     </div>
 
+    <!-- Notifikasi global -->
     <div id="notification"></div>
 
     <script>
+        // --- SELEKSI ELEMEN DOM ---
+        // Mengambil semua elemen HTML yang akan dimanipulasi agar mudah diakses.
         const authContainer = document.getElementById('auth-container');
         const appContainer = document.getElementById('app-container');
         const loginForm = document.getElementById('login-form');
@@ -118,6 +144,7 @@
         const downloadBtn = document.getElementById('download-btn');
         const pdfCanvas = document.getElementById('pdf-canvas');
         const canvasWrapper = document.getElementById('canvas-wrapper');
+        const pdfViewerContainer = document.getElementById('pdf-viewer-container');
         const placeholderText = document.getElementById('placeholder-text');
         const notification = document.getElementById('notification');
         const prevPageBtn = document.getElementById('prev-page');
@@ -131,28 +158,34 @@
         const activeSignatureName = document.getElementById('active-signature-name');
         const noSignaturesMsg = document.getElementById('no-signatures-msg');
 
-        let pdfDoc = null;
-        let currentPageNum = 1;
-        let activeSignatureImage = null; // Holds the data URL of the selected signature
-        let allSignatures = []; // Holds all signature objects from localStorage
-        let placedSignatures = []; // Holds signatures placed on the PDF
-        let activeDragTarget = null;
-        let activeResizeTarget = null;
-        let dragOffset = { x: 0, y: 0 };
-        let initialSize = { width: 0, height: 0, x: 0, y: 0 };
+        // --- VARIABEL STATE APLIKASI ---
+        // Variabel untuk menyimpan kondisi dan data aplikasi saat berjalan.
+        let pdfDoc = null; // Menyimpan objek PDF yang sedang dibuka
+        let currentPageNum = 1; // Halaman PDF yang sedang aktif
+        let activeSignatureImage = null; // Data URL dari tanda tangan yang dipilih saat ini
+        let allSignatures = []; // Array semua objek tanda tangan yang disimpan di localStorage
+        let placedSignatures = []; // Array tanda tangan yang sudah ditempatkan di PDF
+        let activeDragTarget = null; // Elemen tanda tangan yang sedang di-drag
+        let activeResizeTarget = null; // Elemen tanda tangan yang sedang di-resize
+        let dragOffset = { x: 0, y: 0 }; // Offset untuk presisi saat drag
+        let initialSize = { width: 0, height: 0, x: 0, y: 0 }; // Ukuran awal sebelum resize
         
+        // --- LOGIKA OTENTIKASI & SESI ---
+        // Memeriksa apakah pengguna sudah login saat halaman dimuat
         window.addEventListener('load', () => {
             if (sessionStorage.getItem('loggedInUser') === 'WATCMOF') {
                 showApp('WATCMOF');
             }
         });
 
+        // Menangani submit form login
         loginForm.addEventListener('submit', (e) => {
             e.preventDefault();
             const user = document.getElementById('login-user').value;
             const pass = document.getElementById('login-password').value;
+            // Kredensial di-hardcode di sini
             if (user === 'WATCMOF' && pass === 'watc122.3') {
-                sessionStorage.setItem('loggedInUser', user);
+                sessionStorage.setItem('loggedInUser', user); // Simpan status login di session
                 showApp(user);
             } else {
                 authError.textContent = 'Username atau Password salah.';
@@ -160,6 +193,7 @@
             }
         });
 
+        // Menangani logout
         logoutBtn.addEventListener('click', () => {
             sessionStorage.removeItem('loggedInUser');
             authContainer.classList.remove('hidden');
@@ -167,13 +201,15 @@
             resetAppState();
         });
         
+        // Menampilkan aplikasi utama dan menyembunyikan form login
         function showApp(username) {
             authContainer.classList.add('hidden');
             appContainer.classList.remove('hidden');
             userDisplay.textContent = `Login sebagai: ${username}`;
-            loadUserSignatures(username);
+            loadUserSignatures(username); // Muat tanda tangan milik pengguna
         }
 
+        // Mereset state aplikasi ke kondisi awal
         function resetAppState() {
             pdfDoc = null;
             placedSignatures = [];
@@ -184,29 +220,33 @@
             renderSignaturesForCurrentPage();
         }
 
+        // --- LOGIKA PENYIMPANAN TANDA TANGAN (localStorage) ---
         function getSignatureStorageKey(username) { return `savedSignatures_${username}`; }
 
+        // Memuat semua tanda tangan pengguna dari localStorage
         function loadUserSignatures(username) {
             const storageKey = getSignatureStorageKey(username);
             const savedSigsJSON = localStorage.getItem(storageKey);
             allSignatures = savedSigsJSON ? JSON.parse(savedSigsJSON) : [];
             
             if (allSignatures.length > 0) {
-                setActiveSignature(allSignatures[0]);
+                setActiveSignature(allSignatures[0]); // Jadikan TTD pertama sebagai TTD aktif
             } else {
                 activeSignatureName.textContent = 'Tidak ada TTD aktif';
                 activeSignatureImage = null;
             }
-            populateSignatureSelector();
+            populateSignatureSelector(); // Isi galeri di modal
         }
 
+        // Mengatur tanda tangan yang aktif saat ini
         function setActiveSignature(sig) {
             activeSignatureImage = sig.data;
             activeSignatureName.textContent = `Aktif: ${sig.name}`;
-            populateSignatureSelector(); // Repopulate to update the 'selected' style
+            populateSignatureSelector(); 
             showNotification(`Tanda tangan "${sig.name}" dipilih.`);
         }
 
+        // Memproses gambar TTD (menghapus background putih) dan menyimpannya
         function processAndSaveSignature(imageDataUrl, sigName, username) {
             const img = new Image();
             img.onload = () => {
@@ -217,8 +257,11 @@
                 ctx.drawImage(img, 0, 0);
                 const imageData = ctx.getImageData(0, 0, canvas.width, canvas.height);
                 const data = imageData.data;
+                // Loop melalui setiap pixel dan buat pixel putih menjadi transparan
                 for (let i = 0; i < data.length; i += 4) {
-                    if (data[i] > 240 && data[i + 1] > 240 && data[i + 2] > 240) data[i + 3] = 0;
+                    if (data[i] > 240 && data[i + 1] > 240 && data[i + 2] > 240) {
+                        data[i + 3] = 0; // Ubah alpha channel menjadi 0 (transparan)
+                    }
                 }
                 ctx.putImageData(imageData, 0, 0);
                 const transparentImageDataUrl = canvas.toDataURL('image/png');
@@ -234,12 +277,12 @@
             img.src = imageDataUrl;
         }
 
+        // Event listener untuk input file unggah TTD
         signatureUpload.addEventListener('change', (e) => {
             const loggedInUser = sessionStorage.getItem('loggedInUser');
             if (!loggedInUser) return;
             const file = e.target.files[0];
             if (file && file.type.startsWith('image/')) {
-                // FIX: Remove prompt and use filename as the default name.
                 const sigName = file.name.split('.').slice(0, -1).join('.') || "Tanda Tangan Baru";
                 const fileReader = new FileReader();
                 fileReader.onload = (event) => processAndSaveSignature(event.target.result, sigName, loggedInUser);
@@ -247,10 +290,11 @@
             }
         });
         
-        // Modal Logic
+        // --- LOGIKA MODAL PEMILIH TANDA TANGAN ---
         selectSignatureBtn.addEventListener('click', () => signatureModal.classList.remove('hidden'));
         closeModalBtn.addEventListener('click', () => signatureModal.classList.add('hidden'));
         
+        // Mengisi galeri di dalam modal dengan TTD yang tersimpan
         function populateSignatureSelector() {
             signatureGallery.innerHTML = '';
             if (allSignatures.length === 0) {
@@ -291,11 +335,11 @@
             });
         }
 
+        // Menghapus TTD dari localStorage
         function deleteSignature(sigId) {
             const sigToDelete = allSignatures.find(s => s.id === sigId);
             if (!sigToDelete) return;
 
-            // FIX: Use a more reliable confirmation method if confirm() is an issue. For now, it's kept.
             if (window.confirm(`Apakah Anda yakin ingin menghapus tanda tangan "${sigToDelete.name}"?`)) {
                 allSignatures = allSignatures.filter(s => s.id !== sigId);
                 localStorage.setItem(getSignatureStorageKey(sessionStorage.getItem('loggedInUser')), JSON.stringify(allSignatures));
@@ -312,11 +356,12 @@
             }
         }
         
+        // --- LOGIKA INTI PDF (RENDER, DRAG-DROP) ---
         pdfjsLib.GlobalWorkerOptions.workerSrc = `https://cdnjs.cloudflare.com/ajax/libs/pdf.js/2.16.105/pdf.worker.min.js`;
         
-        pdfUpload.addEventListener('change', (e) => {
-            const file = e.target.files[0];
-            if (file && file.type === 'application/pdf') {
+        // Fungsi utama untuk memproses file PDF
+        function handlePdfFile(file) {
+             if (file && file.type === 'application/pdf') {
                 const fileReader = new FileReader();
                 fileReader.onload = function() {
                     const typedarray = new Uint8Array(this.result);
@@ -329,12 +374,45 @@
                         pdfCanvas.style.display = 'block';
                         pageCountSpan.textContent = pdfDoc.numPages;
                         updateNavButtons();
+
+                        // Trik untuk memperbarui properti `files` dari input, agar nama file bisa diambil saat download
+                        const dataTransfer = new DataTransfer();
+                        dataTransfer.items.add(file);
+                        pdfUpload.files = dataTransfer.files;
                     });
                 };
                 fileReader.readAsArrayBuffer(file);
+            } else {
+                showNotification("Hanya file PDF yang didukung!", true);
+            }
+        }
+
+        // Event listener untuk input file unggah PDF (via klik)
+        pdfUpload.addEventListener('change', (e) => {
+            const file = e.target.files[0];
+            handlePdfFile(file);
+        });
+
+        // Event listeners untuk fungsionalitas Drag and Drop PDF
+        const dropZone = pdfViewerContainer;
+        dropZone.addEventListener('dragover', (e) => {
+            e.preventDefault(); e.stopPropagation();
+            dropZone.classList.add('dragover');
+        });
+        dropZone.addEventListener('dragleave', (e) => {
+            e.preventDefault(); e.stopPropagation();
+            dropZone.classList.remove('dragover');
+        });
+        dropZone.addEventListener('drop', (e) => {
+            e.preventDefault(); e.stopPropagation();
+            dropZone.classList.remove('dragover');
+            const files = e.dataTransfer.files;
+            if (files && files.length > 0) {
+                handlePdfFile(files[0]);
             }
         });
 
+        // Merender satu halaman PDF ke dalam canvas
         function renderPage(num) {
             if (!pdfDoc) return;
             pdfDoc.getPage(num).then(page => {
@@ -344,11 +422,13 @@
                 pdfCanvas.width = viewport.width;
                 page.render({ canvasContext: context, viewport: viewport }).promise.then(() => {
                     pageNumSpan.textContent = num;
-                    renderSignaturesForCurrentPage();
+                    renderSignaturesForCurrentPage(); // Tampilkan TTD untuk halaman ini
                 });
             });
         }
 
+        // --- LOGIKA PENEMPATAN TANDA TANGAN ---
+        // Menampilkan semua elemen TTD yang seharusnya ada di halaman saat ini
         function renderSignaturesForCurrentPage() {
             document.querySelectorAll('.signature-wrapper').forEach(el => el.remove());
             placedSignatures.forEach((sig, index) => {
@@ -360,6 +440,7 @@
             downloadBtn.disabled = placedSignatures.length === 0;
         }
         
+        // Membuat elemen DOM untuk satu tanda tangan
         function createSignatureElement(sig, index) {
             const wrapper = document.createElement('div');
             wrapper.className = 'signature-wrapper';
@@ -368,27 +449,35 @@
             wrapper.style.width = `${sig.width}px`;
             wrapper.style.height = `${sig.height}px`;
             wrapper.dataset.signatureIndex = index;
+
             const img = document.createElement('img');
-            img.src = sig.imgData; // Use the specific image data for this signature
+            img.src = sig.imgData;
             img.className = 'signature-img';
+
             const resizeHandle = document.createElement('div');
             resizeHandle.className = 'resize-handle';
+
             const deleteHandle = document.createElement('div');
             deleteHandle.className = 'delete-handle';
             deleteHandle.innerHTML = '&times;';
+
             wrapper.appendChild(img);
             wrapper.appendChild(resizeHandle);
             wrapper.appendChild(deleteHandle);
+
+            // Menambahkan event listeners untuk interaksi (drag, resize, delete)
             wrapper.addEventListener('mousedown', onDragStart);
             resizeHandle.addEventListener('mousedown', onResizeStart);
             deleteHandle.addEventListener('click', onDeletePlaced);
             return wrapper;
         }
 
+        // Navigasi halaman
         prevPageBtn.addEventListener('click', () => { if (currentPageNum <= 1) return; currentPageNum--; renderPage(currentPageNum); updateNavButtons(); });
         nextPageBtn.addEventListener('click', () => { if (currentPageNum >= pdfDoc.numPages) return; currentPageNum++; renderPage(currentPageNum); updateNavButtons(); });
         function updateNavButtons() { prevPageBtn.disabled = !pdfDoc || currentPageNum <= 1; nextPageBtn.disabled = !pdfDoc || currentPageNum >= pdfDoc.numPages; }
 
+        // Menempatkan TTD baru saat area kanvas diklik
         canvasWrapper.addEventListener('click', (e) => {
             if (!pdfDoc || !activeSignatureImage || e.target.closest('.signature-wrapper')) return;
             const rect = canvasWrapper.getBoundingClientRect();
@@ -399,16 +488,18 @@
             const newSignature = {
                 pageNum: currentPageNum, x: x, y: y,
                 width: defaultWidth, height: defaultHeight,
-                imgData: activeSignatureImage // Store which signature was used
+                imgData: activeSignatureImage
             };
             placedSignatures.push(newSignature);
             renderSignaturesForCurrentPage();
         });
         
+        // Fungsi-fungsi untuk menangani interaksi drag, resize, dan delete
         function onDragStart(e) { activeDragTarget = e.currentTarget; const index = activeDragTarget.dataset.signatureIndex; if (!placedSignatures[index]) return; dragOffset.x = e.clientX - activeDragTarget.getBoundingClientRect().left; dragOffset.y = e.clientY - activeDragTarget.getBoundingClientRect().top; activeDragTarget.style.cursor = 'grabbing'; }
         function onResizeStart(e) { e.stopPropagation(); activeResizeTarget = e.currentTarget.parentElement; const index = activeResizeTarget.dataset.signatureIndex; if (!placedSignatures[index]) return; const rect = activeResizeTarget.getBoundingClientRect(); initialSize.width = rect.width; initialSize.height = rect.height; initialSize.x = e.clientX; initialSize.y = e.clientY; }
         function onDeletePlaced(e) { e.stopPropagation(); const wrapper = e.currentTarget.parentElement; const index = parseInt(wrapper.dataset.signatureIndex, 10); placedSignatures.splice(index, 1); renderSignaturesForCurrentPage(); }
 
+        // Event listener global untuk menangani pergerakan mouse saat drag/resize
         document.addEventListener('mousemove', (e) => {
             e.preventDefault();
             if (activeDragTarget) {
@@ -426,8 +517,10 @@
             }
         });
 
+        // Event listener global untuk mengakhiri sesi drag/resize
         document.addEventListener('mouseup', () => { if(activeDragTarget) activeDragTarget.style.cursor = 'move'; activeDragTarget = null; activeResizeTarget = null; });
         
+        // --- LOGIKA UNDUH PDF ---
         downloadBtn.addEventListener('click', async () => {
             if (!pdfDoc || placedSignatures.length === 0) return;
             showNotification('Mempersiapkan PDF...');
@@ -436,7 +529,7 @@
             const { jsPDF } = window.jspdf;
             let finalPdf = null;
             
-            // Preload all unique signature images
+            // Muat semua gambar TTD yang unik terlebih dahulu untuk efisiensi
             const uniqueSigImages = [...new Set(placedSignatures.map(s => s.imgData))];
             const imageElements = {};
             for(const sigData of uniqueSigImages) {
@@ -446,6 +539,7 @@
                 imageElements[sigData] = img;
             }
             
+            // Loop melalui setiap halaman PDF
             for (let i = 1; i <= pdfDoc.numPages; i++) {
                 const page = await pdfDoc.getPage(i);
                 const viewport = page.getViewport({ scale: 1.5 });
@@ -455,6 +549,7 @@
                 tempCanvas.height = viewport.height;
                 await page.render({ canvasContext: tempCtx, viewport: viewport }).promise;
                 
+                // Cari dan gambar semua TTD yang ada di halaman ini
                 const signaturesOnPage = placedSignatures.filter(s => s.pageNum === i);
                 if (signaturesOnPage.length > 0) {
                     const canvasRect = pdfCanvas.getBoundingClientRect();
@@ -468,6 +563,7 @@
                     }
                 }
 
+                // Tambahkan halaman yang sudah digambar (dengan TTD) ke objek PDF akhir
                 const imageData = tempCanvas.toDataURL('image/jpeg', 0.95);
                 if (i === 1) {
                     finalPdf = new jsPDF({ orientation: tempCanvas.width > tempCanvas.height ? 'l' : 'p', unit: 'px', format: [tempCanvas.width, tempCanvas.height] });
@@ -477,12 +573,14 @@
                     finalPdf.addImage(imageData, 'JPEG', 0, 0, tempCanvas.width, tempCanvas.height);
                 }
             }
+            // Simpan file PDF yang sudah jadi
             const originalFileName = pdfUpload.files[0].name.replace('.pdf', '');
             finalPdf.save(`${originalFileName}-ditandatangani.pdf`);
             downloadBtn.disabled = false;
             downloadBtn.textContent = 'Simpan & Unduh PDF';
         });
 
+        // Fungsi utilitas untuk menampilkan notifikasi
         function showNotification(message, isError = false) {
             notification.textContent = message;
             notification.style.backgroundColor = isError ? '#ef4444' : '#22c55e';
