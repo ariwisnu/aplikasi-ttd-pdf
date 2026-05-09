@@ -31,8 +31,9 @@
         /* Styling untuk elemen tanda tangan yang ditempatkan */
         .signature-wrapper { position: absolute; display: block; border: 2px dashed rgba(79, 70, 229, 0.5); cursor: move; user-select: none; }
         .signature-img { width: 100%; height: 100%; display: block; pointer-events: none; }
-        .resize-handle { position: absolute; bottom: -5px; right: -5px; width: 12px; height: 12px; background-color: #4f46e5; border: 2px solid white; border-radius: 50%; cursor: se-resize; }
-        .delete-handle { position: absolute; top: -8px; right: -8px; width: 18px; height: 18px; background-color: #ef4444; color: white; border: 2px solid white; border-radius: 50%; cursor: pointer; display: flex; align-items: center; justify-content: center; font-size: 12px; font-weight: bold; }
+        .resize-handle { position: absolute; bottom: -7px; right: -7px; width: 18px; height: 18px; background-color: #4f46e5; border: 2px solid white; border-radius: 50%; cursor: se-resize; touch-action: none; }
+        .delete-handle { position: absolute; top: -10px; right: -10px; width: 24px; height: 24px; background-color: #ef4444; color: white; border: 2px solid white; border-radius: 50%; cursor: pointer; display: flex; align-items: center; justify-content: center; font-size: 14px; font-weight: bold; touch-action: manipulation; }
+        .signature-wrapper { touch-action: none; }
         
         /* Notifikasi pop-up */
         #notification { position: fixed; bottom: 20px; left: 50%; transform: translateX(-50%); background-color: #22c55e; color: white; padding: 10px 20px; border-radius: 0.5rem; z-index: 1000; opacity: 0; transition: opacity 0.5s; }
@@ -564,9 +565,15 @@
             wrapper.appendChild(resizeHandle);
             wrapper.appendChild(deleteHandle);
 
+            // Mouse events
             wrapper.addEventListener('mousedown', onDragStart);
             resizeHandle.addEventListener('mousedown', onResizeStart);
+            // Touch events
+            wrapper.addEventListener('touchstart', onDragStart, { passive: false });
+            resizeHandle.addEventListener('touchstart', onResizeStart, { passive: false });
+            // Delete: tap on mobile, click on desktop
             deleteHandle.addEventListener('click', onDeletePlaced);
+            deleteHandle.addEventListener('touchend', (e) => { e.preventDefault(); onDeletePlaced(e); });
             return wrapper;
         }
 
@@ -574,49 +581,85 @@
         nextPageBtn.addEventListener('click', () => { if (currentPageNum >= pdfDoc.numPages) return; currentPageNum++; renderPage(currentPageNum); updateNavButtons(); });
         function updateNavButtons() { prevPageBtn.disabled = !pdfDoc || currentPageNum <= 1; nextPageBtn.disabled = !pdfDoc || currentPageNum >= pdfDoc.numPages; }
 
-        // [DIPERBAIKI] Penempatan TTD menggunakan rasio aspek asli gambar
+        // Helper: ambil koordinat klien dari event mouse ATAU touch
+        function getClientPos(e) {
+            if (e.touches && e.touches.length > 0) {
+                return { x: e.touches[0].clientX, y: e.touches[0].clientY };
+            }
+            if (e.changedTouches && e.changedTouches.length > 0) {
+                return { x: e.changedTouches[0].clientX, y: e.changedTouches[0].clientY };
+            }
+            return { x: e.clientX, y: e.clientY };
+        }
+
+        // Penempatan TTD: support klik (desktop) dan tap (mobile)
+        // Menggunakan pointerup agar tidak bentrok dengan drag touch
+        let touchPlaceStartPos = null;
+        canvasWrapper.addEventListener('touchstart', (e) => {
+            if (!pdfDoc || !activeSignatureImage || e.target.closest('.signature-wrapper')) return;
+            touchPlaceStartPos = { x: e.touches[0].clientX, y: e.touches[0].clientY };
+        }, { passive: true });
+
+        canvasWrapper.addEventListener('touchend', (e) => {
+            if (!pdfDoc || !activeSignatureImage || e.target.closest('.signature-wrapper')) return;
+            if (!touchPlaceStartPos) return;
+            const endPos = { x: e.changedTouches[0].clientX, y: e.changedTouches[0].clientY };
+            const dist = Math.hypot(endPos.x - touchPlaceStartPos.x, endPos.y - touchPlaceStartPos.y);
+            touchPlaceStartPos = null;
+            // Hanya tempatkan TTD kalau jarinya tidak bergerak jauh (bukan scroll)
+            if (dist > 10) return;
+            e.preventDefault();
+            placeTTD(endPos.x, endPos.y);
+        }, { passive: false });
+
         canvasWrapper.addEventListener('click', (e) => {
             if (!pdfDoc || !activeSignatureImage || e.target.closest('.signature-wrapper')) return;
-            const rect = canvasWrapper.getBoundingClientRect();
+            placeTTD(e.clientX, e.clientY);
+        });
 
-            // Lebar default 150px, tinggi dihitung otomatis dari rasio aspek asli
+        function placeTTD(clientX, clientY) {
+            const rect = canvasWrapper.getBoundingClientRect();
             const defaultWidth = 150;
             const defaultHeight = defaultWidth / activeSignatureAspectRatio;
-
-            const x = e.clientX - rect.left - (defaultWidth / 2);
-            const y = e.clientY - rect.top - (defaultHeight / 2);
-            const newSignature = {
+            const x = clientX - rect.left - (defaultWidth / 2);
+            const y = clientY - rect.top - (defaultHeight / 2);
+            placedSignatures.push({
                 pageNum: currentPageNum,
-                x: x,
-                y: y,
+                x, y,
                 width: defaultWidth,
                 height: defaultHeight,
-                aspectRatio: activeSignatureAspectRatio,  // [BARU] Simpan rasio bersama tanda tangan
+                aspectRatio: activeSignatureAspectRatio,
                 imgData: activeSignatureImage
-            };
-            placedSignatures.push(newSignature);
+            });
             renderSignaturesForCurrentPage();
-        });
+        }
         
         function onDragStart(e) {
+            // Jangan drag kalau yang disentuh adalah resize/delete handle
+            if (e.target.classList.contains('resize-handle') || e.target.classList.contains('delete-handle')) return;
+            e.preventDefault();
             activeDragTarget = e.currentTarget;
             const index = activeDragTarget.dataset.signatureIndex;
             if (!placedSignatures[index]) return;
-            dragOffset.x = e.clientX - activeDragTarget.getBoundingClientRect().left;
-            dragOffset.y = e.clientY - activeDragTarget.getBoundingClientRect().top;
+            const pos = getClientPos(e);
+            const rect = activeDragTarget.getBoundingClientRect();
+            dragOffset.x = pos.x - rect.left;
+            dragOffset.y = pos.y - rect.top;
             activeDragTarget.style.cursor = 'grabbing';
         }
 
         function onResizeStart(e) {
+            e.preventDefault();
             e.stopPropagation();
             activeResizeTarget = e.currentTarget.parentElement;
             const index = activeResizeTarget.dataset.signatureIndex;
             if (!placedSignatures[index]) return;
+            const pos = getClientPos(e);
             const rect = activeResizeTarget.getBoundingClientRect();
             initialSize.width = rect.width;
             initialSize.height = rect.height;
-            initialSize.x = e.clientX;
-            initialSize.y = e.clientY;
+            initialSize.x = pos.x;
+            initialSize.y = pos.y;
         }
 
         function onDeletePlaced(e) {
@@ -627,43 +670,57 @@
             renderSignaturesForCurrentPage();
         }
 
-        document.addEventListener('mousemove', (e) => {
+        // Handler pergerakan — dipakai oleh mouse maupun touch
+        function onMoveHandler(e) {
+            if (!activeDragTarget && !activeResizeTarget) return;
             e.preventDefault();
+            const pos = getClientPos(e);
+
             if (activeDragTarget) {
                 const index = activeDragTarget.dataset.signatureIndex;
                 const sig = placedSignatures[index];
                 if (!sig) return;
                 const wrapperRect = canvasWrapper.getBoundingClientRect();
-                let newX = e.clientX - wrapperRect.left - dragOffset.x;
-                let newY = e.clientY - wrapperRect.top - dragOffset.y;
+                let newX = pos.x - wrapperRect.left - dragOffset.x;
+                let newY = pos.y - wrapperRect.top - dragOffset.y;
                 newX = Math.max(0, Math.min(newX, wrapperRect.width - sig.width));
                 newY = Math.max(0, Math.min(newY, wrapperRect.height - sig.height));
                 sig.x = newX; sig.y = newY;
                 activeDragTarget.style.left = `${newX}px`;
                 activeDragTarget.style.top = `${newY}px`;
             }
+
             if (activeResizeTarget) {
                 const index = activeResizeTarget.dataset.signatureIndex;
                 const sig = placedSignatures[index];
                 if (!sig) return;
-                const dx = e.clientX - initialSize.x;
+                const dx = pos.x - initialSize.x;
                 const newWidth = initialSize.width + dx;
                 if (newWidth > 30) {
                     sig.width = newWidth;
-                    // [DIPERBAIKI] Tinggi dihitung dari rasio aspek yang tersimpan, bukan dibagi 2
-                    const ratio = sig.aspectRatio || 2;
-                    sig.height = newWidth / ratio;
+                    // Tinggi selalu mengikuti rasio aspek asli — tidak akan gepeng
+                    sig.height = newWidth / (sig.aspectRatio || 2);
                     activeResizeTarget.style.width = `${sig.width}px`;
                     activeResizeTarget.style.height = `${sig.height}px`;
                 }
             }
-        });
+        }
 
-        document.addEventListener('mouseup', () => {
+        // Handler selesai — dipakai oleh mouse maupun touch
+        function onEndHandler() {
             if (activeDragTarget) activeDragTarget.style.cursor = 'move';
             activeDragTarget = null;
             activeResizeTarget = null;
-        });
+        }
+
+        // Mouse events (desktop)
+        document.addEventListener('mousemove', onMoveHandler);
+        document.addEventListener('mouseup', onEndHandler);
+
+        // Touch events (mobile/tablet) — passive: false agar preventDefault() bisa dipanggil
+        document.addEventListener('touchmove', onMoveHandler, { passive: false });
+        document.addEventListener('touchend', onEndHandler);
+        document.addEventListener('touchcancel', onEndHandler);
         
         // --- LOGIKA UNDUH PDF ---
         downloadBtn.addEventListener('click', async () => {
